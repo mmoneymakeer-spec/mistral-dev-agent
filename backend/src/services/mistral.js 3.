@@ -1,0 +1,110 @@
+const axios = require('axios');
+
+const MISTRAL_URL = 'https://api.mistral.ai/v1/chat/completions';
+
+const AGENT_SYSTEM_PROMPT = `You are an autonomous senior software engineer AI agent powered by Mistral.
+Your mission: analyze tasks, plan solutions, and generate complete production-grade code.
+
+STRICT OUTPUT FORMAT:
+1. Start with a numbered plan (3-5 steps)
+2. For each file, use EXACTLY this format:
+   ---FILE: path/filename.ext---
+   [complete file content]
+   ---END---
+3. End with setup instructions
+
+Rules:
+- Generate REAL, COMPLETE, WORKING code only
+- No placeholders, no TODOs
+- Use modern best practices
+- Include error handling
+- Add comments for complex logic`;
+
+async function runAgentTask(task, history = [], apiKey) {
+  const key = apiKey || process.env.MISTRAL_API_KEY;
+  if (!key) throw new Error('MISTRAL_API_KEY manquante');
+
+  const messages = [
+    { role: 'system', content: AGENT_SYSTEM_PROMPT },
+    ...history.slice(-6),
+    {
+      role: 'user',
+      content: `TASK: ${task}\n\nGenerate complete code with ---FILE--- format for each file.`
+    }
+  ];
+
+  const response = await axios.post(
+    MISTRAL_URL,
+    {
+      model: 'mistral-small-latest',
+      temperature: 0.2,
+      max_tokens: 4000,
+      messages
+    },
+    {
+      headers: {
+        'Authorization': `Bearer ${key}`,
+        'Content-Type': 'application/json'
+      },
+      timeout: 60000
+    }
+  );
+
+  return response.data.choices[0].message.content;
+}
+
+async function debugCode(code, error, apiKey) {
+  const key = apiKey || process.env.MISTRAL_API_KEY;
+  const response = await axios.post(
+    MISTRAL_URL,
+    {
+      model: 'mistral-small-latest',
+      temperature: 0.1,
+      max_tokens: 2000,
+      messages: [
+        {
+          role: 'system',
+          content: 'You are a debugging expert. Analyze the error and provide the fixed code using ---FILE--- format.'
+        },
+        {
+          role: 'user',
+          content: `CODE:\n${code}\n\nERROR:\n${error}\n\nFix the bug and return corrected code.`
+        }
+      ]
+    },
+    {
+      headers: {
+        'Authorization': `Bearer ${key}`,
+        'Content-Type': 'application/json'
+      },
+      timeout: 30000
+    }
+  );
+  return response.data.choices[0].message.content;
+}
+
+async function explainCode(code, apiKey) {
+  const key = apiKey || process.env.MISTRAL_API_KEY;
+  const response = await axios.post(
+    MISTRAL_URL,
+    {
+      model: 'mistral-small-latest',
+      temperature: 0.3,
+      max_tokens: 1000,
+      messages: [{
+        role: 'user',
+        content: `Explain this code clearly and concisely:\n\n${code}`
+      }]
+    },
+    {
+      headers: {
+        'Authorization': `Bearer ${key}`,
+        'Content-Type': 'application/json'
+      },
+      timeout: 20000
+    }
+  );
+  return response.data.choices[0].message.content;
+}
+
+module.exports = { runAgentTask, debugCode, explainCode };
